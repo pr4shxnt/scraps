@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://gwxzpdhb-3000.inc1.devtunnels.ms/api'; // Dev tunnel URL
+const API_URL = 'https://q4n8mbr4-3000.inc1.devtunnels.ms/api'; // Dev tunnel URL
 
 const api = axios.create({
   baseURL: API_URL,
@@ -80,8 +80,8 @@ export const jobService = {
     const response = await api.get('/job');
     return response.data;
   },
-  swipe: async (jobId: number, action: 'left' | 'right' | 'up') => {
-    const response = await api.post('/job/swipe', { jobId, action });
+  swipe: async (jobId: number, action: 'left' | 'right' | 'up', jobMongoId?: string) => {
+    const response = await api.post('/job/swipe', { jobId, action, jobMongoId });
     return response.data;
   },
   getDailyStats: async () => {

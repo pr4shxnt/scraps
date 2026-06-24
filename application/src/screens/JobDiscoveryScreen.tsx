@@ -285,12 +285,13 @@ export const JobDiscoveryScreen = ({ navigation }: any) => {
         useNativeDriver: true,
       }).start(async () => {
         const swipedJobId = currentJob.id;
+        const swipedJobMongoId = currentJob._id;
         position.setValue({ x: 0, y: 0 });
         setCurrentIndex(prev => prev + 1);
 
         try {
-          console.log(`[Swipe] Calling API: jobId=${swipedJobId}, direction=${direction}`);
-          const res = await jobService.swipe(swipedJobId, direction);
+          console.log(`[Swipe] Calling API: jobId=${swipedJobId}, mongoId=${swipedJobMongoId}, direction=${direction}`);
+          const res = await jobService.swipe(swipedJobId, direction, swipedJobMongoId);
           if (res?.dailyStats) setDailyStats(res.dailyStats);
         } catch (error: any) {
           console.error('[Swipe] API Error:', error);
