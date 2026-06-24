@@ -95,6 +95,9 @@ export async function registerUser(request: Request, response: Response) {
         email: user.email,
         isVerified: user.isVerified,
         role: user.role,
+        cvUrl: user.cvUrl,
+        idUrl: user.idUrl,
+        profileImageUrl: user.profileImageUrl,
       },
     });
   } catch (error) {
@@ -146,6 +149,9 @@ export async function loginUser(request: Request, response: Response) {
         isVerified: user.isVerified,
         role: user.role,
         name: `${user.firstName} ${user.lastName}`,
+        cvUrl: user.cvUrl,
+        idUrl: user.idUrl,
+        profileImageUrl: user.profileImageUrl,
       },
     });
   } catch {
@@ -193,6 +199,7 @@ export async function loginCompanyUser(request: Request, response: Response) {
         email: user.email,
         role: user.role,
         companyId: user.role === "company" ? String(user._id) : undefined,
+        profileImageUrl: user.profileImageUrl,
       },
     });
   } catch {

@@ -18,6 +18,7 @@ import { useAuth } from '../auth/AuthContext';
 export const LoginScreen = ({ navigation }: any) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
@@ -31,7 +32,10 @@ export const LoginScreen = ({ navigation }: any) => {
     try {
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Login Failed', error.response?.data?.message || 'Something went wrong');
+      Alert.alert(
+        'Login Failed',
+        error.response?.data?.message || 'Something went wrong',
+      );
     } finally {
       setLoading(false);
     }
@@ -88,21 +92,34 @@ export const LoginScreen = ({ navigation }: any) => {
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.inputField}
-                placeholder="••••••••"
-                placeholderTextColor={Colors.outline}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="••••••••"
+                  placeholderTextColor={Colors.outline}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(prev => !prev)}
+                  style={styles.eyeIcon}
+                >
+                  <Icon
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={Colors.outline}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
-
             <TouchableOpacity
-              style={styles.forgotPasswordLink}
               onPress={() => navigation.navigate('ForgotPassword')}
+              style={{ alignSelf: 'flex-end', marginTop: -8, marginBottom: 16 }}
             >
-              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+              <Text style={{ color: Colors.primary, fontWeight: '600' }}>
+                Forgot Password?
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -118,34 +135,6 @@ export const LoginScreen = ({ navigation }: any) => {
             )}
           </TouchableOpacity>
           {/* ... (Social and Footer) */}
-
-          {/* Social Logins */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <View style={styles.socialSection}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Icon
-                name="google"
-                size={20}
-                color="#000"
-                style={styles.socialIcon}
-              />
-              <Text style={styles.socialButtonText}>Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
-              <Icon
-                name="linkedin"
-                size={20}
-                color="#0A66C2"
-                style={styles.socialIcon}
-              />
-              <Text style={styles.socialButtonText}>LinkedIn</Text>
-            </TouchableOpacity>
-          </View>
 
           {/* Footer Links */}
           <View style={styles.footerSection}>
@@ -205,19 +194,10 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '700',
   },
-  forgotPasswordLink: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-  },
-  forgotPasswordText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   logoSection: {
     alignItems: 'center',
     marginBottom: 40,
-  }
+  },
   largeIconContainer: {
     width: 64,
     height: 64,
@@ -261,6 +241,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#EBEBEF',
     borderRadius: 12,
     paddingHorizontal: 16,
+    paddingVertical: 16,
+    color: '#000',
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBEBEF',
+    borderRadius: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    color: '#000',
+  },
+  eyeIcon: {
+    paddingHorizontal: 14,
     paddingVertical: 16,
   },
   placeholderText: {

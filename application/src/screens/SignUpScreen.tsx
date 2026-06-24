@@ -21,12 +21,20 @@ export const SignUpScreen = ({ navigation }: any) => {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
 
   const handleSignUp = async () => {
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !confirmPassword) {
       Alert.alert('Error', 'All fields are required');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
@@ -34,7 +42,10 @@ export const SignUpScreen = ({ navigation }: any) => {
     try {
       await register({ firstName, lastName, email, password });
     } catch (error: any) {
-      Alert.alert('Registration Failed', error.response?.data?.message || 'Something went wrong');
+      Alert.alert(
+        'Registration Failed',
+        error.response?.data?.message || 'Something went wrong',
+      );
     } finally {
       setLoading(false);
     }
@@ -77,45 +88,14 @@ export const SignUpScreen = ({ navigation }: any) => {
             </Text>
           </View>
 
-          {/* Social Logins */}
-          <View style={styles.socialSection}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Icon
-                name="google"
-                size={20}
-                color={Colors.on_surface}
-                style={styles.socialIcon}
-              />
-              <Text style={styles.socialButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
-              <Icon
-                name="linkedin"
-                size={20}
-                color="#0A66C2"
-                style={styles.socialIcon}
-              />
-              <Text style={styles.socialButtonText}>
-                Continue with LinkedIn
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR EMAIL</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
           {/* Form Elements */}
           <View style={styles.formSection}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>First Name</Text>
               <TextInput
-                style={styles.inputField}
+                style={[styles.inputField, { color: '#000' }]}
                 placeholder="John"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor="#000"
                 value={firstName}
                 onChangeText={setFirstName}
               />
@@ -124,9 +104,9 @@ export const SignUpScreen = ({ navigation }: any) => {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Last Name</Text>
               <TextInput
-                style={styles.inputField}
+                style={[styles.inputField, { color: '#000' }]}
                 placeholder="Doe"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor="#000"
                 value={lastName}
                 onChangeText={setLastName}
               />
@@ -135,9 +115,9 @@ export const SignUpScreen = ({ navigation }: any) => {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email Address</Text>
               <TextInput
-                style={styles.inputField}
+                style={[styles.inputField, { color: '#000' }]}
                 placeholder="name@company.com"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor="#000"
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -147,14 +127,50 @@ export const SignUpScreen = ({ navigation }: any) => {
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.inputField}
-                placeholder="••••••••"
-                placeholderTextColor={Colors.outline}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[styles.passwordInput, { color: '#000' }]}
+                  placeholder="••••••••"
+                  placeholderTextColor="#000"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Icon
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={Colors.outline}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[styles.passwordInput, { color: '#000' }]}
+                  placeholder="••••••••"
+                  placeholderTextColor="#000"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Icon
+                    name={showConfirmPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={Colors.outline}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -170,6 +186,13 @@ export const SignUpScreen = ({ navigation }: any) => {
               <Text style={styles.submitButtonText}>Create Account</Text>
             )}
           </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
           {/* Footer Links */}
           <View style={styles.footerSection}>
@@ -320,6 +343,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#EBEBEF',
     borderRadius: 12,
     paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBEBEF',
+    borderRadius: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  eyeIcon: {
+    paddingHorizontal: 14,
     paddingVertical: 16,
   },
   placeholderText: {

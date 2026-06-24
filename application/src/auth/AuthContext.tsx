@@ -7,7 +7,8 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
-  isVerified: string;
+  isVerified: boolean | string;
+  isOTPverified?: boolean;
   role: string;
   cvUrl?: string;
   idUrl?: string;
@@ -23,6 +24,9 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => void;
   refreshProfile: () => Promise<void>;
+  forgotPassword: (email: string) => Promise<any>;
+  verifyEmail: (code: string) => Promise<void>;
+  resendVerification: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -97,6 +101,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const forgotPassword = async (email: string) => {
+    return await authService.forgotPassword(email);
+  };
+
+  const verifyEmail = async (code: string) => {
+    // Mock implementation for UI since backend doesn't have the endpoint yet.
+    if (user) {
+      setUser({ ...user, isVerified: true });
+    }
+  };
+
+  const resendVerification = async () => {
+    // Mock implementation
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -107,6 +126,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         updateUser,
         refreshProfile,
+        forgotPassword,
+        verifyEmail,
+        resendVerification,
       }}
     >
       {children}

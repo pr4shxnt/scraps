@@ -1,6 +1,8 @@
 import type { Response } from "express";
 import CompanyApplication from "../models/company-application.model.js";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
+import CompanyProfile from "../models/company-profile.model.js";
+import CompanyJob from "../models/company-job.model.js";
 
 type ApplicationTab = "matches" | "let_it_go";
 const ALLOWED_TABS: ApplicationTab[] = ["matches", "let_it_go"];
@@ -40,7 +42,22 @@ export async function listMyApplications(
       query.status = "Rejected";
     }
 
-    const items = await CompanyApplication.find(query).sort({ appliedAt: -1 });
+    const applications = await CompanyApplication.find(query).sort({ appliedAt: -1 }).lean();
+
+    const items = await Promise.all(
+      applications.map(async (app) => {
+        const [companyProfile, companyJob] = await Promise.all([
+          CompanyProfile.findOne({ ownerId: app.ownerId }).lean(),
+          CompanyJob.findOne({ ownerId: app.ownerId, id: app.jobId }).lean(),
+        ]);
+
+        return {
+          ...app,
+          companyDetails: companyProfile || null,
+          jobDetails: companyJob || null,
+        };
+      })
+    );
 
     response.status(200).json({
       items,

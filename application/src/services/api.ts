@@ -1,13 +1,13 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://swipe2-work-ur6j.vercel.app/api'; // Dev tunnel URL
+const API_URL = 'https://gwxzpdhb-3000.inc1.devtunnels.ms/api'; // Dev tunnel URL
 
 const api = axios.create({
   baseURL: API_URL,
 });
 
-api.interceptors.request.use(async (config) => {
+api.interceptors.request.use(async config => {
   const token = await AsyncStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -34,8 +34,16 @@ export const authService = {
     const response = await api.get('/user/me');
     return response.data;
   },
-  updateDocuments: async (docs: { cvUrl?: string; idUrl?: string; profileImageUrl?: string }) => {
+  updateDocuments: async (docs: {
+    cvUrl?: string;
+    idUrl?: string;
+    profileImageUrl?: string;
+  }) => {
     const response = await api.patch('/user/documents', docs);
+    return response.data;
+  },
+  forgotPassword: async (email: string) => {
+    const response = await api.post('/user/forgot-password', { email });
     return response.data;
   },
   logout: async () => {

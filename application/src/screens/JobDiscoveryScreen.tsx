@@ -15,6 +15,7 @@ import {
   Animated,
   PanResponder,
   ImageBackground,
+  Image,
   Dimensions,
   ActivityIndicator,
   Alert,
@@ -256,7 +257,8 @@ export const JobDiscoveryScreen = ({ navigation }: any) => {
       const currentJob = currentJobs[index];
       
       // Block unverified users from applying (Right or Up swipe)
-      if ((direction === 'right' || direction === 'up') && user?.isVerified !== 'true') {
+      const isVerified = user?.isVerified === true || user?.isVerified === 'true';
+      if ((direction === 'right' || direction === 'up') && !isVerified) {
         Alert.alert(
           'Verification Required',
           'Your profile must be verified before you can apply for jobs.',
@@ -351,12 +353,21 @@ export const JobDiscoveryScreen = ({ navigation }: any) => {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-            <View style={styles.avatarPlaceholder} />
+            {user?.profileImageUrl ? (
+              <Image 
+                source={{ uri: user.profileImageUrl }} 
+                style={styles.avatarImage} 
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitials}>
+                  {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
           <Text style={styles.brandText}>SWIPE2WORK</Text>
-          <TouchableOpacity>
-            <Icon name="tune" size={24} color={Colors.primary} />
-          </TouchableOpacity>
+          <View style={{ width: 36 }} />
         </View>
 
         <View style={styles.subHeader}>
@@ -364,7 +375,7 @@ export const JobDiscoveryScreen = ({ navigation }: any) => {
             {dailyStats ? `${dailyStats.appliedToday}/${dailyStats.applyLimit} APPLIED TODAY` : 'NEW OPPORTUNITY'}
           </Text>
           <Text style={styles.pageTitle}>Handpicked for you</Text>
-          {!user?.isVerified && (
+          {!(user?.isVerified === true || user?.isVerified === 'true') && (
             <TouchableOpacity style={styles.verificationWarning} onPress={() => navigation.navigate('DocumentUpload')}>
               <Icon name="alert-circle" size={16} color="#E53935" />
               <Text style={styles.verificationWarningText}>Verification Pending: Tap to upload documents</Text>
@@ -406,7 +417,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F8FC' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7F8FC' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 16, marginBottom: 24 },
-  avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary_container },
+  avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+  avatarImage: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F0F0' },
+  avatarInitials: { color: '#FFF', fontSize: 14, fontWeight: 'bold' },
   brandText: { ...Typography.titleMd, color: Colors.primary, fontWeight: 'bold', letterSpacing: 1 },
   subHeader: { paddingHorizontal: 24, marginBottom: 16 },
   eyebrow: { ...Typography.labelSm, color: Colors.primary, fontWeight: 'bold', marginBottom: 4 },

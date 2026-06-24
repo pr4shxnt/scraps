@@ -78,7 +78,7 @@ export const ProfileScreen = ({ navigation }: any) => {
             )}
             <TouchableOpacity 
               style={styles.editImageButton}
-              onPress={() => navigation.navigate('DocumentUpload')}
+              onPress={() => navigation.navigate('EditProfilePicture')}
             >
               <Icon name="camera" size={20} color="#FFF" />
             </TouchableOpacity>
@@ -86,14 +86,14 @@ export const ProfileScreen = ({ navigation }: any) => {
           <Text style={styles.userName}>{user?.firstName} {user?.lastName}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
           
-          <View style={[styles.badge, user?.isVerified === 'true' ? styles.verifiedBadge : styles.pendingBadge]}>
+          <View style={[styles.badge, (user?.isVerified === true || user?.isVerified === 'true') ? styles.verifiedBadge : styles.pendingBadge]}>
             <Icon 
-              name={user?.isVerified === 'true' ? "check-decagram" : "clock-outline"} 
+              name={(user?.isVerified === true || user?.isVerified === 'true') ? "check-decagram" : "clock-outline"} 
               size={16} 
-              color={user?.isVerified === 'true' ? "#006C4A" : "#E53935"} 
+              color={(user?.isVerified === true || user?.isVerified === 'true') ? "#006C4A" : "#E53935"} 
             />
-            <Text style={[styles.badgeText, user?.isVerified === 'true' ? styles.verifiedText : styles.pendingText]}>
-              {user?.isVerified === 'true' ? 'Verified Profile' : 'Verification Pending'}
+            <Text style={[styles.badgeText, (user?.isVerified === true || user?.isVerified === 'true') ? styles.verifiedText : styles.pendingText]}>
+              {(user?.isVerified === true || user?.isVerified === 'true') ? 'Verified Profile' : 'Verification Pending'}
             </Text>
           </View>
         </View>
@@ -114,9 +114,25 @@ export const ProfileScreen = ({ navigation }: any) => {
         <View style={styles.menuContainer}>
           <Text style={styles.sectionTitle}>Account Settings</Text>
           
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('EditProfile')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: '#E8F5E9' }]}>
+                <Icon name="account-edit-outline" size={24} color="#2E7D32" />
+              </View>
+              <Text style={styles.menuItemText}>Edit Profile</Text>
+            </View>
+            <Icon name="chevron-right" size={24} color={Colors.outline} />
+          </TouchableOpacity>
+
           <TouchableOpacity 
-            style={styles.menuItem} 
-            onPress={() => navigation.navigate('DocumentUpload')}
+            style={styles.menuItem}
+            onPress={() => {
+              if (user?.isVerified === true || user?.isVerified === 'true') {
+                navigation.navigate('VerificationStatus');
+              } else {
+                navigation.navigate('DocumentUpload');
+              }
+            }}
           >
             <View style={styles.menuItemLeft}>
               <View style={[styles.iconContainer, { backgroundColor: '#E3F2FD' }]}>
@@ -127,7 +143,7 @@ export const ProfileScreen = ({ navigation }: any) => {
             <Icon name="chevron-right" size={24} color={Colors.outline} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Notifications')}>
             <View style={styles.menuItemLeft}>
               <View style={[styles.iconContainer, { backgroundColor: '#F3E5F5' }]}>
                 <Icon name="bell-outline" size={24} color="#7B1FA2" />
@@ -137,15 +153,7 @@ export const ProfileScreen = ({ navigation }: any) => {
             <Icon name="chevron-right" size={24} color={Colors.outline} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: '#FFF3E0' }]}>
-                <Icon name="shield-check-outline" size={24} color="#F57C00" />
-              </View>
-              <Text style={styles.menuItemText}>Privacy & Security</Text>
-            </View>
-            <Icon name="chevron-right" size={24} color={Colors.outline} />
-          </TouchableOpacity>
+
 
           <TouchableOpacity style={[styles.menuItem, { marginTop: 24 }]} onPress={handleLogout}>
             <View style={styles.menuItemLeft}>

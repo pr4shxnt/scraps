@@ -5,14 +5,17 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../theme/colors';
 import { Typography } from '../theme/typography';
 import { StatusBar } from 'react-native';
+import { useAuth } from '../auth/AuthContext';
 
 export const SwipeGuideScreen = ({ navigation }: any) => {
+  const { user } = useAuth();
   return (
     <SafeAreaView
       edges={['top', 'bottom', 'left', 'right']}
@@ -23,10 +26,20 @@ export const SwipeGuideScreen = ({ navigation }: any) => {
         {/* Top Navbar */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <View style={styles.avatarPlaceholder} />
+            {user?.profileImageUrl ? (
+              <Image 
+                source={{ uri: user.profileImageUrl }} 
+                style={styles.avatarImage} 
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitials}>
+                  {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
+                </Text>
+              </View>
+            )}
             <Text style={styles.brandText}>SWIPE2WORK</Text>
           </View>
-          <Icon name="tune" size={24} color={Colors.primary} />
         </View>
 
         <ScrollView
@@ -125,8 +138,22 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primary_container,
+    backgroundColor: Colors.primary,
     marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+    marginRight: 12,
+  },
+  avatarInitials: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   brandText: {
     ...Typography.titleMd,
