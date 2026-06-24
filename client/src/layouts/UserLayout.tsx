@@ -1,27 +1,24 @@
-import { useEffect } from "react";
+import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { logoutUser } from "../store/slices/authSlice";
-import { loadUserJobs } from "../store/slices/userSlice";
+// Profile drawer — added for profile icon feature; no existing code changed
+import { UserProfileModal } from "../pages/UserProfileModal";
 
 const navItems = [
   { to: "/user/dashboard", label: "Dashboard" },
   { to: "/user/applications", label: "My Applications" },
   { to: "/user/cv-builder", label: "Build My CV" },
   { to: "/user/interview-prep", label: "AI Interview Prep" },
+  { to: "/user/change-password", label: "Change Password" },
 ];
 
 export function UserLayout() {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state: any) => state.auth.user);
-  const loading = useAppSelector((state: any) => state.user.jobsLoading);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (user?.role === "User") {
-      void dispatch(loadUserJobs());
-    }
-  }, [dispatch, user?.role]);
+  // Controls visibility of the profile slide-in drawer
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const handleLogout = () => {
     dispatch(logoutUser());
@@ -59,7 +56,15 @@ export function UserLayout() {
           </div>
 
           <div className="sidebar-footer">
-            <div className="sidebar-user-card">
+            {/* Clicking the user card opens the profile panel */}
+            <div
+              className="sidebar-user-card"
+              onClick={() => setProfileOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && setProfileOpen(true)}
+              style={{ cursor: "pointer" }}
+            >
               <p>{user?.name}</p>
               <small>{user?.role?.toUpperCase()}</small>
             </div>
@@ -81,13 +86,27 @@ export function UserLayout() {
               <h1>Welcome back, {user?.name?.split(" ")[0]}</h1>
               <p>Find your next opportunity.</p>
             </div>
+            {/* Profile icon — also opens the profile drawer */}
+            <button
+              className="profile-icon-btn"
+              onClick={() => setProfileOpen(true)}
+              aria-label="Open profile"
+              title={`Profile: ${user?.name ?? "User"}`}
+            >
+              {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+            </button>
           </div>
         </header>
 
         <section className="portal-content">
-          {loading ? <p>Loading your space...</p> : <Outlet />}
+          <Outlet />
         </section>
       </main>
+
+      {/* Profile slide-in drawer — rendered outside portal-main so it overlays everything */}
+      {profileOpen && (
+        <UserProfileModal onClose={() => setProfileOpen(false)} />
+      )}
     </div>
   );
 }

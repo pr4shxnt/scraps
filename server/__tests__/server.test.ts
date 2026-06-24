@@ -1,6 +1,8 @@
+process.env.NODE_ENV = "test";
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
 import { createHttpServer } from "../src/index.js";
 import User from "../src/models/user.model.js";
@@ -94,7 +96,7 @@ test("POST /api/users/register returns token and user payload", async () => {
         firstName: "Prashant",
         lastName: "K",
         email: "prashant@example.com",
-        password: "secret123",
+        password: "Secret123!",
       }),
     });
 
@@ -313,3 +315,172 @@ test("POST /api/media/upload rejects unsupported file types", async () => {
     assert.equal(payload.message, "Only image files (jpeg/png/webp/heic/heif) and pdf are supported");
   });
 });
+
+test("POST /api/users/verify-email validates code and email", async () => {
+  let savedUser: any = null;
+  mockedUserModel.findOne = async () => ({
+    _id: "507f191e810c19729de860ea",
+    email: "test-verify@example.com",
+    isVerified: "false",
+    verificationCode: "123456",
+    verificationCodeExpiry: Date.now() + 600000,
+    save: async function() {
+      savedUser = this;
+      return this;
+    },
+  });
+
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/users/verify-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: "test-verify@example.com",
+        code: "123456",
+      }),
+    });
+
+    const payload = await response.json() as { message: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.message, "Email verified successfully");
+    assert.ok(savedUser);
+    assert.equal(savedUser.isVerified, "true");
+  });
+});
+
+test("POST /api/users/resend-verification generates code and sends email", async () => {
+  let savedUser: any = null;
+  mockedUserModel.findOne = async () => ({
+    _id: "507f191e810c19729de860ea",
+    email: "test-resend@example.com",
+    isVerified: "false",
+    save: async function() {
+      savedUser = this;
+      return this;
+    },
+  });
+
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/users/resend-verification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: "test-resend@example.com",
+      }),
+    });
+
+    const payload = await response.json() as { message: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.message, "Verification code resent successfully");
+    assert.ok(savedUser);
+    assert.ok(savedUser.verificationCode);
+    assert.ok(savedUser.verificationCodeExpiry > Date.now());
+  });
+});
+
+test("POST /api/users/register rejects weak passwords", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/users/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        firstName: "Fail",
+        lastName: "User",
+        email: "fail-pwd@example.com",
+        password: "weak",
+      }),
+    });
+
+    const payload = await response.json() as { message: string };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.message, "Password must be at least 8 characters long.");
+  });
+});
+
+test("POST /api/users/change-password validates current and new password constraints", async () => {
+  const token = jwt.sign(
+    {
+      userId: "507f191e810c19729de860ea",
+      email: "candidate@example.com",
+      role: "User",
+    },
+    JWT_SECRET,
+    { expiresIn: "1h" },
+  );
+
+  const hashedPwd = await bcrypt.hash("secret123", 10);
+  let savedUser: any = null;
+  mockedUserModel.findById = (id: string) => ({
+    _id: id,
+    password: hashedPwd,
+    save: async function() {
+      savedUser = this;
+      return this;
+    },
+  } as any);
+
+  await withServer(async (baseUrl) => {
+    // 1. Password mismatch
+    let response = await fetch(`${baseUrl}/api/users/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentPassword: "secret123",
+        newPassword: "NewSecretPassword123!",
+        confirmPassword: "DifferentPassword123!",
+      }),
+    });
+    let payload = await response.json() as { message: string };
+    assert.equal(response.status, 400);
+    assert.equal(payload.message, "Passwords do not match");
+
+    // 2. Weak new password
+    response = await fetch(`${baseUrl}/api/users/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentPassword: "secret123",
+        newPassword: "weak",
+        confirmPassword: "weak",
+      }),
+    });
+    payload = await response.json() as { message: string };
+    assert.equal(response.status, 400);
+    assert.equal(payload.message, "Password must be at least 8 characters long.");
+
+    // 3. Successful change
+    response = await fetch(`${baseUrl}/api/users/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentPassword: "secret123",
+        newPassword: "NewSecurePassword123!",
+        confirmPassword: "NewSecurePassword123!",
+      }),
+    });
+    payload = await response.json() as { message: string };
+    assert.equal(response.status, 200);
+    assert.equal(payload.message, "Password changed successfully");
+    assert.ok(savedUser);
+  });
+});
+
+

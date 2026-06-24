@@ -1,4 +1,5 @@
 import * as nodemailer from "nodemailer";
+import { promises as dnsPromises } from "dns";
 
 const FRONTEND_URL = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
@@ -165,6 +166,10 @@ export async function sendVerificationEmail(
     </p>`,
   );
 
+  console.log("\n==========================================");
+  console.log(`🔑 DEVELOPMENT OTP CODE: ${otp}`);
+  console.log("==========================================\n");
+
   await sendMail(
     toEmail,
     "Your Swipe2Work verification code",
@@ -176,8 +181,9 @@ export async function sendVerificationEmail(
 export async function sendPasswordResetEmail(
   toEmail: string,
   rawToken: string,
+  resetPath: string = "reset-password",
 ): Promise<void> {
-  const resetLink = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
+  const resetLink = `${FRONTEND_URL}/${resetPath}?token=${rawToken}`;
 
   const html = baseTemplate(
     "Reset your password",
@@ -208,10 +214,170 @@ export async function sendPasswordResetEmail(
     </p>`,
   );
 
+  console.log("\n==========================================");
+  console.log(`🔑 DEVELOPMENT RESET TOKEN: ${rawToken}`);
+  console.log("==========================================\n");
+
   await sendMail(
     toEmail,
     "Reset your Swipe2Work password",
     html,
     `Reset your password: ${resetLink}\n\nExpires in 1 hour.`,
+  );
+}
+
+export async function verifyEmailExistence(email: string): Promise<{ isValid: boolean; reason?: string }> {
+  // 1. Basic Format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { isValid: false, reason: "Please enter a valid email address." };
+  }
+
+  const parts = email.split("@");
+  if (parts.length !== 2) {
+    return { isValid: false, reason: "Please enter a valid email address." };
+  }
+  const [localPart, domain] = parts;
+  if (!localPart || !domain) {
+    return { isValid: false, reason: "Please enter a valid email address." };
+  }
+
+  // 2. Disposable domain check
+  const disposableDomains = new Set([
+    "mailinator.com", "yopmail.com", "10minutemail.com", "tempmail.com", 
+    "dispostable.com", "sharklasers.com", "guerrillamail.com", "trashmail.com", 
+    "getairmail.com", "fakeinbox.com", "maildrop.cc", "temp-mail.org",
+    "disposable.com", "throwawaymail.com", "mailnesia.com", "mailcatch.com"
+  ]);
+
+  if (disposableDomains.has(domain.toLowerCase())) {
+    return { isValid: false, reason: "Please use a real email account." };
+  }
+
+  // Bypassing DNS MX record checks in test mode so tests run fast and offline
+  if (process.env.NODE_ENV === "test") {
+    return { isValid: true };
+  }
+
+  // 3. MX Record check
+  try {
+    const mxRecords = await dnsPromises.resolveMx(domain);
+    if (!mxRecords || mxRecords.length === 0) {
+      return { isValid: false, reason: "This email address does not exist." };
+    }
+  } catch (error: any) {
+    console.error(`[email-val] DNS MX lookup failed for ${domain}:`, error);
+    // If it's a structural error like ENOTFOUND or ENODATA, it means the domain/MX records don't exist
+    if (error.code === "ENOTFOUND" || error.code === "ENODATA") {
+      return { isValid: false, reason: "This email address does not exist." };
+    }
+    // Fallback: assume valid if we encounter transient network errors (e.g. ECONNREFUSED)
+    return { isValid: true };
+  }
+
+  return { isValid: true };
+}
+
+export async function sendVerificationSubmittedEmail(
+  toEmail: string,
+  companyName: string,
+): Promise<void> {
+  const html = baseTemplate(
+    "Verification Documents Submitted",
+    `
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Hello ${companyName},
+    </p>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      We have received your business verification documents. Our team is currently reviewing them.
+    </p>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      We will notify you via email as soon as the review is complete. While pending, you will not be able to publish job postings.
+    </p>
+    `
+  );
+
+  await sendMail(
+    toEmail,
+    "Swipe2Work - Verification Documents Submitted",
+    html,
+    `Your verification documents for ${companyName} have been submitted and are pending review.`
+  );
+}
+
+export async function sendVerificationApprovedEmail(
+  toEmail: string,
+  companyName: string,
+): Promise<void> {
+  const html = baseTemplate(
+    "Company Verification Approved",
+    `
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Great news, ${companyName}!
+    </p>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Your company verification has been approved. You now have full access to publish and manage job postings on Swipe2Work.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:#6c47ff;border-radius:8px;">
+          <a href="${FRONTEND_URL}/company/login"
+            style="display:inline-block;padding:14px 32px;color:#fff;
+                   font-size:15px;font-weight:bold;text-decoration:none;">
+            Go to Portal
+          </a>
+        </td>
+      </tr>
+    </table>
+    `
+  );
+
+  await sendMail(
+    toEmail,
+    "Swipe2Work - Company Verification Approved",
+    html,
+    `Your verification for ${companyName} has been approved. You can now publish jobs.`
+  );
+}
+
+export async function sendVerificationRejectedEmail(
+  toEmail: string,
+  companyName: string,
+  reason: string,
+): Promise<void> {
+  const html = baseTemplate(
+    "Company Verification Rejected",
+    `
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Hello ${companyName},
+    </p>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Unfortunately, we were unable to approve your company verification due to the following reason:
+    </p>
+    <div style="padding:16px;background:#fef2f2;border-left:4px solid #ef4444;margin:16px 0;color:#991b1b;font-size:14px;">
+      ${reason}
+    </div>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:15px;line-height:1.6;">
+      Please log in to your employer profile, correct the issue, and resubmit your documents.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:#6c47ff;border-radius:8px;">
+          <a href="${FRONTEND_URL}/company/login"
+            style="display:inline-block;padding:14px 32px;color:#fff;
+                   font-size:15px;font-weight:bold;text-decoration:none;">
+            Log In to Resubmit
+          </a>
+        </td>
+      </tr>
+    </table>
+    `
+  );
+
+  await sendMail(
+    toEmail,
+    "Swipe2Work - Company Verification Rejected",
+    html,
+    `Your verification for ${companyName} has been rejected. Reason: ${reason}`
   );
 }

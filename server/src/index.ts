@@ -18,6 +18,33 @@ import { setupInterviewSocket } from "./controllers/ai.interview.controller.js";
 import { connectDB } from "./services/db.js";
 export const app = express();
 
+const ALLOWED_ORIGINS = (
+  process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173"
+)
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+    } else if (ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else if (process.env.NODE_ENV === "development" && /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+      // Allow any localhost port in development so Vite port changes never break auth
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin '${origin}' not allowed`));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.use(cookieParser());
+app.use(express.json());
+
 app.use(
   async (request: Request, _response: Response, next: express.NextFunction) => {
     // Skip DB check for basic health and info routes
@@ -34,42 +61,22 @@ app.use(
   },
 );
 
-const ALLOWED_ORIGINS = (
-  process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:5173"
-)
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-
-const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. curl, Postman, server-to-server)
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: origin '${origin}' not allowed`));
-    }
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
-app.use(cookieParser());
-app.use(express.json());
-
 app.get("/health", (_request: Request, response: Response) => {
   response.status(200).type("text/plain").send("OK");
 });
 
 app.get("/api", (_request: Request, response: Response) => {
   response.status(200).json({
-    message: "Welcome to swipe2work API",
+    message: "Welcome to Nysa API",
     version: "1.0.0",
   });
 });
 
+
 app.use("/api/user", userRouter);
+app.use("/api/users", userRouter);
 app.use("/api/job", jobRouter);
+app.use("/api/jobs", jobRouter);
 app.use("/api/applications", applicationRouter);
 app.use("/api/media", mediaRouter);
 app.use("/api/company", companyRouter);
@@ -150,3 +157,4 @@ if (isMainModule) {
 }
 
 export default app;
+// Trigger restart 2

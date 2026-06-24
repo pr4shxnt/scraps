@@ -3,12 +3,14 @@ import Candidate from "../models/candidate.model.js";
 import CompanyApplication from "../models/company-application.model.js";
 import CompanyJob from "../models/company-job.model.js";
 import CompanyProfileModel from "../models/company-profile.model.js";
+import User from "../models/user.model.js";
 import type {
   CompanyProfile,
   Job,
   JobApplication,
 } from "../data/company.types.js";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
+import { sendVerificationSubmittedEmail } from "../services/email.service.js";
 
 const allowedApplicationStatuses: JobApplication["status"][] = [
   "New",
@@ -59,6 +61,21 @@ export async function createJobForCompany(
 ) {
   const userId = getAuthorizedUserId(request, response);
   if (!userId) return;
+
+  // Verification gate — only verified companies may publish job roles
+  try {
+    const companyUser = await User.findById(userId);
+    if (!companyUser || (!companyUser.isVerified && !companyUser.isOTPverified)) {
+      response.status(403).json({
+        message:
+          "Company verification required. Please upload valid business registration documents before publishing job roles.",
+      });
+      return;
+    }
+  } catch {
+    response.status(500).json({ message: "Unable to verify company status" });
+    return;
+  }
 
   const {
     title,
@@ -178,11 +195,17 @@ export async function patchApplicationStatus(
 }
 
 export async function listCandidatesForCompany(
-  _request: AuthenticatedRequest,
+  request: AuthenticatedRequest,
   response: Response,
 ) {
+  const userId = getAuthorizedUserId(request, response);
+  if (!userId) return;
+
   try {
-    const items = await Candidate.find().sort({ fullName: 1 });
+    const applications = await CompanyApplication.find({ ownerId: userId });
+    const candidateIds = [...new Set(applications.map(app => app.candidateId))];
+
+    const items = await Candidate.find({ id: { $in: candidateIds } });
     response.status(200).json({ items });
   } catch (error) {
     response.status(500).json({ message: "Unable to list candidates" });
@@ -193,7 +216,7 @@ export async function getCandidateForCompany(
   request: AuthenticatedRequest,
   response: Response,
 ) {
-  const { candidateId } = request.params;
+  const candidateId = request.params.candidateId as string;
 
   try {
     const candidate = await Candidate.findOne({ id: candidateId });
@@ -231,19 +254,8 @@ export async function saveProfileForCompany(
 
   const profileData = request.body as Partial<CompanyProfile>;
 
-  if (
-    !profileData.companyName ||
-    !profileData.companyType ||
-    !profileData.industry ||
-    !profileData.address ||
-    !profileData.city ||
-    !profileData.country ||
-    !profileData.about ||
-    !profileData.teamSize
-  ) {
-    response.status(400).json({
-      message: "Required fields are missing",
-    });
+  if (!profileData.companyName) {
+    response.status(400).json({ message: "Company Name is required" });
     return;
   }
 
@@ -256,6 +268,59 @@ export async function saveProfileForCompany(
     response.status(200).json({ item: saved });
   } catch (error) {
     response.status(500).json({ message: "Unable to save company profile" });
+  }
+}
+
+// Saves uploaded document URLs to the company profile and marks it as Pending Review.
+// Mirrors the Job Seeker document submission flow.
+export async function saveVerificationDocs(
+  request: AuthenticatedRequest,
+  response: Response,
+) {
+  const userId = getAuthorizedUserId(request, response);
+  if (!userId) return;
+
+  const { businessRegDocUrl, taxIdDocUrl } = request.body as {
+    businessRegDocUrl?: string;
+    taxIdDocUrl?: string;
+  };
+
+  if (!businessRegDocUrl && !taxIdDocUrl) {
+    response.status(400).json({ message: "At least one document URL is required" });
+    return;
+  }
+
+  try {
+    const updateFields: Record<string, string> = {
+      verificationStatus: "Pending Review",
+    };
+    if (businessRegDocUrl) updateFields.businessRegDocUrl = businessRegDocUrl;
+    if (taxIdDocUrl)       updateFields.taxIdDocUrl       = taxIdDocUrl;
+
+    const saved = await CompanyProfileModel.findOneAndUpdate(
+      { ownerId: userId },
+      { $set: updateFields },
+      { new: true },
+    );
+
+    if (!saved) {
+      response.status(404).json({
+        message: "Company profile not found. Please complete your profile first.",
+      });
+      return;
+    }
+
+    // Notify the company that documents are under review (fire-and-forget)
+    const user = await User.findById(userId);
+    if (user?.email) {
+      sendVerificationSubmittedEmail(user.email, saved.companyName).catch(
+        () => { /* email failure should not block the response */ },
+      );
+    }
+
+    response.status(200).json({ item: saved });
+  } catch {
+    response.status(500).json({ message: "Unable to save verification documents" });
   }
 }
 

@@ -1,18 +1,42 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { applyToJobThunk } from "../store/slices/userSlice";
+import { applyToJobThunk, loadMyCv, loadUserJobs, loadUserApplications } from "../store/slices/userSlice";
+import { calculateJobScore } from "../utils/jobMatch";
+import type { Job, Candidate } from "../types";
 
 export function UserDashboardPage() {
   const dispatch = useAppDispatch();
   const jobs = useAppSelector((state: any) => state.user.suggestedJobs);
+  const jobsLoading = useAppSelector((state: any) => state.user.jobsLoading);
+  const jobsError = useAppSelector((state: any) => state.user.error);
+  const applyError = useAppSelector((state: any) => state.user.applyError);
   const dailyStats = useAppSelector((state: any) => state.user.dailyStats);
   const applications = useAppSelector((state: any) => state.user.applications);
+  const cv = useAppSelector((state: any) => state.user.cv) as Candidate | null;
+  const cvLoading = useAppSelector((state: any) => state.user.cvLoading);
 
-  const appliedJobIds = useMemo(() => {
-    return applications.map((app: any) => app.jobId);
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!cv && !cvLoading) {
+      void dispatch(loadMyCv());
+    }
+  }, [cv, cvLoading, dispatch]);
+
+  useEffect(() => {
+    void dispatch(loadUserJobs());
+    void dispatch(loadUserApplications());
+  }, [dispatch]);
+
+  // Use compound key "ownerId-jobId" so applying to employer A's job #1 does NOT
+  // mark employer B's job #1 as applied (they share the same numeric id but are different jobs)
+  const appliedJobKeys = useMemo(() => {
+    return new Set<string>(
+      applications.map((app: any) => `${app.ownerId}-${app.jobId}`)
+    );
   }, [applications]);
 
-  const handleApply = (jobId: number) => {
+  const handleApply = (jobId: number, jobMongoId: string) => {
     if (dailyStats && dailyStats.appliedToday >= dailyStats.applyLimit) {
       alert(
         "You have reached your daily apply limit of " +
@@ -21,7 +45,7 @@ export function UserDashboardPage() {
       );
       return;
     }
-    void dispatch(applyToJobThunk(jobId));
+    void dispatch(applyToJobThunk({ jobId, jobMongoId }));
   };
 
   const progressPercent = dailyStats
@@ -70,6 +94,12 @@ export function UserDashboardPage() {
           <span className="pill">{jobs?.length || 0} Open Roles</span>
         </div>
 
+        {applyError && (
+          <p style={{ color: "var(--danger)", marginBottom: "12px" }}>
+            Apply failed: {applyError}
+          </p>
+        )}
+
         <div
           className="job-grid"
           style={{
@@ -78,10 +108,21 @@ export function UserDashboardPage() {
             gap: "24px",
           }}
         >
-          {jobs?.map((job: any, index: number) => {
-            const hasApplied = appliedJobIds.includes(job.id);
+          {jobs?.map((job: Job, index: number) => {
+            const hasApplied = appliedJobKeys.has(`${job.ownerId}-${job.id}`);
             const isLimitReached =
               dailyStats && dailyStats.appliedToday >= dailyStats.applyLimit;
+
+            const matchResult = calculateJobScore(cv, job);
+            let badgeColor = "var(--danger)";
+            let badgeBg = "rgba(239, 68, 68, 0.1)";
+            if (matchResult.score >= 80) {
+              badgeColor = "#006C4A";
+              badgeBg = "rgba(0, 108, 74, 0.1)";
+            } else if (matchResult.score >= 60) {
+              badgeColor = "#B45309";
+              badgeBg = "rgba(245, 158, 11, 0.1)";
+            }
 
             return (
               <div
@@ -106,11 +147,11 @@ export function UserDashboardPage() {
                       {job.location} • {job.employmentType}
                     </p>
                   </div>
-                  {job.match && (
+                  <div style={{ cursor: "pointer" }} onClick={() => setExpandedJobId(expandedJobId === job.id ? null : job.id)}>
                     <span
                       style={{
-                        background: "rgba(0, 108, 74, 0.1)",
-                        color: "#006C4A",
+                        background: badgeBg,
+                        color: badgeColor,
                         fontSize: "0.85rem",
                         fontWeight: "600",
                         whiteSpace: "nowrap",
@@ -118,10 +159,27 @@ export function UserDashboardPage() {
                         borderRadius: "12px",
                       }}
                     >
-                      {job.match} Match
+                      {matchResult.score}% Match
                     </span>
-                  )}
+                  </div>
                 </div>
+
+                {expandedJobId === job.id && (
+                  <div style={{ padding: "12px", background: "var(--bg)", borderRadius: "8px", fontSize: "0.85rem" }}>
+                    <div style={{ marginBottom: "8px" }}>
+                      <strong>Matched Skills:</strong> {matchResult.matchedSkills.length > 0 ? matchResult.matchedSkills.join(", ") : "None"}
+                    </div>
+                    <div style={{ marginBottom: "8px" }}>
+                      <strong>Missing Skills:</strong> {matchResult.missingSkills.length > 0 ? matchResult.missingSkills.join(", ") : "None"}
+                    </div>
+                    <div style={{ marginBottom: "8px" }}>
+                      <strong>Education Match:</strong> {matchResult.educationMatch ? "Yes" : "No"}
+                    </div>
+                    <div>
+                      <strong>Experience Match:</strong> {matchResult.experienceMatch ? "Yes" : "No"}
+                    </div>
+                  </div>
+                )}
 
                 <div className="tag-cloud">
                   {job.tags?.map((tag: string) => (
@@ -136,7 +194,7 @@ export function UserDashboardPage() {
                   <button
                     className="primary-btn"
                     style={{ width: "100%" }}
-                    onClick={() => handleApply(job.id)}
+                    onClick={() => handleApply(job.id, job._id)}
                     disabled={hasApplied || isLimitReached}
                   >
                     {hasApplied ? "Applied" : "Apply"}
@@ -146,7 +204,15 @@ export function UserDashboardPage() {
             );
           })}
 
-          {jobs?.length === 0 && (
+          {jobsLoading && (
+            <p style={{ color: "var(--muted)" }}>Loading jobs...</p>
+          )}
+
+          {!jobsLoading && jobsError && jobs?.length === 0 && !dailyStats && (
+            <p style={{ color: "var(--danger)" }}>Failed to load jobs. Please refresh the page.</p>
+          )}
+
+          {!jobsLoading && jobs?.length === 0 && (dailyStats || !jobsError) && (
             <p style={{ color: "var(--muted)" }}>No jobs found right now.</p>
           )}
         </div>

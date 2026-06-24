@@ -5,13 +5,15 @@ export type AuthUser = {
   name: string;
   email: string;
   role: UserRole;
-  isVerified?: string;
+  isVerified?: boolean;
   companyId?: string;
   token?: string;
 };
 
 export type Job = {
+  _id: string;
   id: number;
+  ownerId: string;
   title: string;
   location: string;
   employmentType: "Full-time" | "Part-time" | "Contract" | "Remote";
@@ -21,6 +23,17 @@ export type Job = {
   deadline: string;
   tags: string[];
   experienceLevel: string;
+  requiredSkills: string[];
+  preferredEducation: string;
+  requiredExperience: number;
+};
+
+export type WorkExperience = {
+  jobTitle: string;
+  company: string;
+  startDate: string;
+  endDate?: string;
+  description?: string;
 };
 
 export type Candidate = {
@@ -28,7 +41,11 @@ export type Candidate = {
   fullName: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
   yearsOfExperience: number;
+  workExperiences: WorkExperience[];
   skills: string[];
   education: string;
   summary: string;
@@ -55,6 +72,10 @@ export type CompanyProfile = {
   website: string;
   about: string;
   teamSize: string;
+  // Verification document URLs — persisted to DB so admin can review
+  businessRegDocUrl?: string;
+  taxIdDocUrl?: string;
+  verificationStatus?: string;
 };
 
 export type CompanyAnalytics = {
@@ -78,6 +99,7 @@ export type UserDailyStats = {
 export type UserApplication = {
   _id: string;
   id: string;
+  ownerId: string;
   jobId: number;
   candidateId: string;
   candidateName: string;

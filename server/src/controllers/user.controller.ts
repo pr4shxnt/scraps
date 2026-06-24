@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
 import Candidate from "../models/candidate.model.js";
 import { generateCvSummary } from "../services/ai.service.js";
-import { sendPasswordResetEmail } from "../services/email.service.js";
+import { sendPasswordResetEmail, sendVerificationEmail, verifyEmailExistence } from "../services/email.service.js";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-jwt-secret";
@@ -43,6 +43,25 @@ function setAuthCookie(response: Response, token: string) {
   response.cookie(TOKEN_COOKIE_NAME, token, COOKIE_OPTIONS);
 }
 
+export function validatePassword(password: string): { isValid: boolean; reason?: string } {
+  if (password.length < 8) {
+    return { isValid: false, reason: "Password must be at least 8 characters long." };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { isValid: false, reason: "Password must contain at least one uppercase letter." };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { isValid: false, reason: "Password must contain at least one lowercase letter." };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { isValid: false, reason: "Password must contain at least one number." };
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return { isValid: false, reason: "Password must contain at least one special character." };
+  }
+  return { isValid: true };
+}
+
 export async function registerUser(request: Request, response: Response) {
   const { firstName, lastName, email, password, role } = request.body as {
     firstName?: string;
@@ -61,6 +80,21 @@ export async function registerUser(request: Request, response: Response) {
 
   try {
     const normalizedEmail = email.toLowerCase();
+
+    // Validate password complexity
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      response.status(400).json({ message: passwordValidation.reason });
+      return;
+    }
+
+    // 1. Validate email existence and format
+    const emailValidation = await verifyEmailExistence(normalizedEmail);
+    if (!emailValidation.isValid) {
+      response.status(400).json({ message: emailValidation.reason });
+      return;
+    }
+
     const existingUser = await User.findOne({ email: normalizedEmail });
 
     if (existingUser) {
@@ -72,14 +106,25 @@ export async function registerUser(request: Request, response: Response) {
 
     const hashedPassword = await bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
 
+    // 2. Generate 6-digit verification code
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+
     const user = await User.create({
       firstName,
       lastName,
       email: normalizedEmail,
       password: hashedPassword,
-      isVerified: "false",
+      isVerified: false,
       role: (role ?? "User") as "User" | "Admin" | "company",
       skills: [],
+      verificationCode: otp,
+      verificationCodeExpiry: otpExpiry,
+    });
+
+    // 3. Send verification email (fire-and-forget — don't block the response)
+    sendVerificationEmail(normalizedEmail, otp).catch((emailError) => {
+      console.error("[register] failed to send verification email:", emailError);
     });
 
     const token = signAuthToken(String(user._id), user.email, user.role);
@@ -94,6 +139,7 @@ export async function registerUser(request: Request, response: Response) {
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         isVerified: user.isVerified,
+        isOTPverified: user.isOTPverified,
         role: user.role,
         cvUrl: user.cvUrl,
         idUrl: user.idUrl,
@@ -136,6 +182,14 @@ export async function loginUser(request: Request, response: Response) {
       return;
     }
 
+    if (!user.isVerified && !user.isOTPverified) {
+      response.status(403).json({
+        message: "Email not verified",
+        email: user.email,
+      });
+      return;
+    }
+
     const token = signAuthToken(String(user._id), user.email, user.role);
     setAuthCookie(response, token);
 
@@ -147,6 +201,7 @@ export async function loginUser(request: Request, response: Response) {
         lastName: user.lastName,
         email: user.email,
         isVerified: user.isVerified,
+        isOTPverified: user.isOTPverified,
         role: user.role,
         name: `${user.firstName} ${user.lastName}`,
         cvUrl: user.cvUrl,
@@ -188,6 +243,14 @@ export async function loginCompanyUser(request: Request, response: Response) {
       return;
     }
 
+    if (!user.isVerified && !user.isOTPverified) {
+      response.status(403).json({
+        message: "Email not verified",
+        email: user.email,
+      });
+      return;
+    }
+
     const token = signAuthToken(String(user._id), user.email, user.role);
     setAuthCookie(response, token);
 
@@ -198,6 +261,8 @@ export async function loginCompanyUser(request: Request, response: Response) {
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role,
+        isVerified: user.isVerified,
+        isOTPverified: user.isOTPverified,
         companyId: user.role === "company" ? String(user._id) : undefined,
         profileImageUrl: user.profileImageUrl,
       },
@@ -236,7 +301,9 @@ export async function forgotPassword(request: Request, response: Response) {
     await user.save();
 
     console.debug(`[auth] generated reset token for ${normalizedEmail}: ${rawToken}`);
-    await sendPasswordResetEmail(normalizedEmail, rawToken);
+    sendPasswordResetEmail(normalizedEmail, rawToken).catch((err) => {
+      console.error("[auth] failed to send password reset email:", err);
+    });
 
     response.status(200).json({
       message: "Password reset instructions have been sent to your email.",
@@ -244,6 +311,51 @@ export async function forgotPassword(request: Request, response: Response) {
     });
   } catch (error) {
     console.error("[auth] forgotPassword error:", error);
+    response.status(500).json({ message: "Unable to process password reset" });
+  }
+}
+
+export async function forgotCompanyPassword(request: Request, response: Response) {
+  const { email } = request.body as { email?: string };
+
+  if (!email) {
+    response.status(400).json({ message: "Email is required" });
+    return;
+  }
+
+  const normalizedEmail = email.toLowerCase();
+  console.debug(`[auth] forgotCompanyPassword requested for ${normalizedEmail}`);
+
+  try {
+    const user = await User.findOne({
+      email: normalizedEmail,
+      role: { $in: ["company", "Admin"] },
+    });
+
+    if (!user) {
+      console.debug(`[auth] forgotCompanyPassword: email not found or not employer: ${normalizedEmail}`);
+      response.status(404).json({
+        message: "No employer account found with this email address.",
+      });
+      return;
+    }
+
+    const rawToken = crypto.randomBytes(24).toString("hex");
+    user.resetToken = rawToken;
+    user.resetTokenExpiry = Date.now() + 1000 * 60 * 60;
+    await user.save();
+
+    console.debug(`[auth] generated reset token for company ${normalizedEmail}: ${rawToken}`);
+    sendPasswordResetEmail(normalizedEmail, rawToken, "company/reset-password").catch((err) => {
+      console.error("[auth] failed to send company password reset email:", err);
+    });
+
+    response.status(200).json({
+      message: "Password reset instructions have been sent to your email.",
+      resetToken: rawToken,
+    });
+  } catch (error) {
+    console.error("[auth] forgotCompanyPassword error:", error);
     response.status(500).json({ message: "Unable to process password reset" });
   }
 }
@@ -264,6 +376,13 @@ export async function resetPassword(request: Request, response: Response) {
 
   if (password !== confirmPassword) {
     response.status(400).json({ message: "Passwords do not match" });
+    return;
+  }
+
+  // Validate password complexity
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    response.status(400).json({ message: passwordValidation.reason });
     return;
   }
 
@@ -324,6 +443,7 @@ export async function getMyProfile(
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
         isVerified: user.isVerified,
+        isOTPverified: user.isOTPverified,
         role: user.role,
         cvUrl: user.cvUrl,
         idUrl: user.idUrl,
@@ -410,33 +530,35 @@ export async function saveMyCV(
     return;
   }
 
-  const { fullName, email, phone, yearsOfExperience, skills, education, summary } =
+  const { fullName, email, phone, dateOfBirth, gender, address, yearsOfExperience, workExperiences, skills, education, summary } =
     request.body as {
       fullName?: string;
       email?: string;
       phone?: string;
+      dateOfBirth?: string;
+      gender?: string;
+      address?: string;
       yearsOfExperience?: number;
+      workExperiences?: Array<{ jobTitle: string; company: string; startDate: string; endDate?: string; description?: string }>;
       skills?: string[];
       education?: string;
       summary?: string;
     };
 
-  if (!fullName || !email || !phone || yearsOfExperience === undefined || !education || !summary) {
-    response.status(400).json({
-      message: "fullName, email, phone, yearsOfExperience, education and summary are required",
-    });
-    return;
-  }
-
   try {
+    const parsedYoe = Number(yearsOfExperience);
     const candidate = await Candidate.upsert(userId, {
-      fullName,
-      email,
-      phone,
-      yearsOfExperience: Number(yearsOfExperience),
+      fullName: fullName ?? "",
+      email: email ?? "",
+      phone: phone ?? "",
+      dateOfBirth,
+      gender,
+      address,
+      yearsOfExperience: !isNaN(parsedYoe) ? parsedYoe : 0,
+      workExperiences: Array.isArray(workExperiences) ? workExperiences : [],
       skills: Array.isArray(skills) ? skills : [],
-      education,
-      summary,
+      education: education ?? "",
+      summary: summary ?? "",
     });
 
     // Also update the user's skills so job matching works
@@ -487,5 +609,150 @@ export async function generateSummaryForCV(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to generate summary";
     response.status(500).json({ message });
+  }
+}
+
+export async function verifyEmail(request: Request, response: Response) {
+  const { code, email } = request.body as { code?: string; email?: string };
+
+  const userEmail = email || (request as AuthenticatedRequest).user?.email;
+
+  if (!code) {
+    response.status(400).json({ message: "Incorrect verification code" }); // keep it friendly
+    return;
+  }
+
+  if (!userEmail) {
+    response.status(400).json({ message: "Email is required" });
+    return;
+  }
+
+  try {
+    const user = await User.findOne({ email: userEmail.toLowerCase() });
+
+    if (!user) {
+      response.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (user.isOTPverified) {
+      response.status(200).json({ message: "Email is already verified" });
+      return;
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code.trim()) {
+      response.status(400).json({ message: "Incorrect verification code" });
+      return;
+    }
+
+    if (!user.verificationCodeExpiry || user.verificationCodeExpiry < Date.now()) {
+      response.status(400).json({ message: "Expired verification code" });
+      return;
+    }
+
+    user.isOTPverified = true;
+    user.verificationCode = undefined;
+    user.verificationCodeExpiry = undefined;
+    await user.save();
+
+    response.status(200).json({ message: "Email verified successfully" });
+  } catch (error) {
+    response.status(500).json({ message: "Unable to verify email" });
+  }
+}
+
+export async function resendVerificationCode(request: Request, response: Response) {
+  const { email } = request.body as { email?: string };
+
+  const userEmail = email || (request as AuthenticatedRequest).user?.email;
+
+  if (!userEmail) {
+    response.status(400).json({ message: "Email is required" });
+    return;
+  }
+
+  try {
+    const user = await User.findOne({ email: userEmail.toLowerCase() });
+
+    if (!user) {
+      response.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (user.isVerified || user.isOTPverified) {
+      response.status(400).json({ message: "Email is already verified" });
+      return;
+    }
+
+    // Generate new code
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.verificationCode = otp;
+    user.verificationCodeExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+
+    try {
+      await sendVerificationEmail(user.email, otp);
+    } catch (emailError) {
+      console.error("[resend] failed to send verification email:", emailError);
+      response.status(500).json({ message: "Failed email delivery" });
+      return;
+    }
+
+    response.status(200).json({ message: "Verification code resent successfully" });
+  } catch (error) {
+    response.status(500).json({ message: "Unable to resend verification code" });
+  }
+}
+
+export async function changePassword(request: Request, response: Response) {
+  const userId = (request as AuthenticatedRequest).user?.userId;
+  if (!userId) {
+    response.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const { currentPassword, newPassword, confirmPassword } = request.body as {
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  };
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    response.status(400).json({
+      message: "currentPassword, newPassword, and confirmPassword are required",
+    });
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    response.status(400).json({ message: "Passwords do not match" });
+    return;
+  }
+
+  const passwordValidation = validatePassword(newPassword);
+  if (!passwordValidation.isValid) {
+    response.status(400).json({ message: passwordValidation.reason });
+    return;
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      response.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      response.status(400).json({ message: "Incorrect current password" });
+      return;
+    }
+
+    user.password = await bcrypt.hash(newPassword, PASSWORD_SALT_ROUNDS);
+    await user.save();
+
+    response.status(200).json({ message: "Password changed successfully" });
+  } catch (error) {
+    response.status(500).json({ message: "Unable to change password" });
   }
 }

@@ -7,6 +7,7 @@ import type {
   JobApplication,
   UserDailyStats,
   UserApplication,
+  WorkExperience,
 } from "../types";
 
 const API_BASE_URL =
@@ -64,6 +65,7 @@ export async function loginCompany(
       email: string;
       role: "company";
       companyId: string;
+      isVerified: boolean;
     };
   }>("/user/company-login", {
     method: "POST",
@@ -77,6 +79,7 @@ export async function loginCompany(
       email: payload.user.email,
       role: payload.user.role,
       companyId: payload.user.companyId,
+      isVerified: payload.user.isVerified,
     },
   };
 }
@@ -89,6 +92,7 @@ export async function registerCompany(data: any): Promise<CompanyLoginPayload> {
       lastName: string;
       email: string;
       role: "company";
+      isVerified: boolean;
     };
   }>("/user/register", {
     method: "POST",
@@ -102,6 +106,7 @@ export async function registerCompany(data: any): Promise<CompanyLoginPayload> {
       email: payload.user.email,
       role: "company",
       companyId: payload.user.id,
+      isVerified: payload.user.isVerified,
     },
   };
 }
@@ -118,7 +123,7 @@ export async function getCompanyJobs(): Promise<Job[]> {
 }
 
 export async function createCompanyJob(
-  input: Omit<Job, "id" | "createdAt">,
+  input: Omit<Job, "_id" | "id" | "ownerId" | "createdAt">,
 ): Promise<Job> {
   const payload = await apiRequest<{ item: Job }>("/company/jobs", {
     method: "POST",
@@ -191,6 +196,17 @@ export async function saveCompanyProfile(
   return payload.item;
 }
 
+export async function saveCompanyVerificationDocs(docs: {
+  businessRegDocUrl?: string;
+  taxIdDocUrl?: string;
+}): Promise<CompanyProfile> {
+  const payload = await apiRequest<{ item: CompanyProfile }>("/company/verification-docs", {
+    method: "PATCH",
+    body: JSON.stringify(docs),
+  });
+  return payload.item;
+}
+
 export async function getCompanyAnalytics(): Promise<CompanyAnalytics> {
   const payload = await apiRequest<{ item: CompanyAnalytics }>(
     "/company/analytics",
@@ -209,6 +225,13 @@ export async function forgotPasswordApi(email: string): Promise<{ message: strin
   });
 }
 
+export async function forgotCompanyPasswordApi(email: string): Promise<{ message: string; resetToken?: string }> {
+  return apiRequest<{ message: string; resetToken?: string }>("/user/company-forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function resetPasswordApi(
   token: string,
   password: string,
@@ -220,16 +243,28 @@ export async function resetPasswordApi(
   });
 }
 
-export async function verifyEmailCode(code: string): Promise<{ message: string }> {
-  return apiRequest<{ message: string }>("/user/verify-email", {
+export async function changePasswordApi(
+  currentPassword: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/user/change-password", {
     method: "POST",
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
   });
 }
 
-export async function resendVerificationCodeApi(): Promise<{ message: string }> {
+export async function verifyEmailCode(code: string, email?: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/user/verify-email", {
+    method: "POST",
+    body: JSON.stringify({ code, email }),
+  });
+}
+
+export async function resendVerificationCodeApi(email?: string): Promise<{ message: string }> {
   return apiRequest<{ message: string }>("/user/resend-verification", {
     method: "POST",
+    body: JSON.stringify({ email }),
   });
 }
 
@@ -259,12 +294,12 @@ export async function getUserJobs() {
   return payload;
 }
 
-export async function applyToJob(jobId: number) {
+export async function applyToJob(jobId: number, jobMongoId: string) {
   const payload = await apiRequest<{ application: UserApplication }>(
-    `/job/${jobId}/swipe`,
+    `/job/swipe`,
     {
       method: "POST",
-      body: JSON.stringify({ action: "right" }),
+      body: JSON.stringify({ jobId, jobMongoId, action: "right" }),
     },
   );
   return payload;
@@ -308,7 +343,11 @@ export type CvData = {
   fullName: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
   yearsOfExperience: number;
+  workExperiences: WorkExperience[];
   skills: string[];
   education: string;
   summary: string;
@@ -339,5 +378,45 @@ export async function generateCVSummary(data: {
     body: JSON.stringify(data),
   });
   return payload.summary;
+}
+
+// ── Document / media upload ───────────────────────────────────────────────────
+// Uses multipart/form-data — cannot reuse apiRequest() which forces JSON content-type.
+// Endpoint: POST /api/media/upload  (requires auth cookie, 10 MB limit)
+// Accepted types: application/pdf, image/jpeg, image/png, image/webp
+
+export type UploadedFile = {
+  secureUrl: string;
+  originalName: string;
+  mimeType: string;
+  bytes: number;
+};
+
+export async function uploadDocumentFile(
+  file: File,
+  folder: string,
+): Promise<UploadedFile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("folder", folder);
+
+  // Do NOT set Content-Type — the browser must add it together with the multipart boundary
+  const response = await fetch(`${API_BASE_URL}/media/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let msg = `Upload failed (${response.status})`;
+    try {
+      const err = (await response.json()) as { message?: string };
+      if (err.message) msg = err.message;
+    } catch { /* ignore JSON parse errors */ }
+    throw new Error(msg);
+  }
+
+  const payload = (await response.json()) as { file: UploadedFile };
+  return payload.file;
 }
 

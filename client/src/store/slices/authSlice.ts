@@ -12,6 +12,7 @@ import {
   getMe,
   verifyEmailCode,
   resendVerificationCodeApi,
+  changePasswordApi,
 } from "../../services/api";
 import type { AuthUser, UserRole } from "../../types";
 
@@ -116,9 +117,9 @@ export const registerNormalUserAccount = createAsyncThunk(
 
 export const verifyEmailAccount = createAsyncThunk(
   "auth/verifyEmailAccount",
-  async (code: string, { rejectWithValue }) => {
+  async ({ code, email }: { code: string; email?: string }, { rejectWithValue }) => {
     try {
-      const payload = await verifyEmailCode(code);
+      const payload = await verifyEmailCode(code, email);
       return payload.message;
     } catch (error) {
       return rejectWithValue(
@@ -130,13 +131,34 @@ export const verifyEmailAccount = createAsyncThunk(
 
 export const resendVerificationCode = createAsyncThunk(
   "auth/resendVerificationCode",
-  async (_, { rejectWithValue }) => {
+  async (email: string | undefined, { rejectWithValue }) => {
     try {
-      const payload = await resendVerificationCodeApi();
+      const payload = await resendVerificationCodeApi(email);
       return payload.message;
     } catch (error) {
       return rejectWithValue(
         error instanceof Error ? error.message : "Unable to resend verification code",
+      );
+    }
+  },
+);
+
+export const changeUserPassword = createAsyncThunk(
+  "auth/changeUserPassword",
+  async (
+    { currentPassword, newPassword, confirmPassword }: any,
+    { rejectWithValue },
+  ) => {
+    try {
+      const payload = await changePasswordApi(
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      );
+      return payload.message;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : "Unable to change password",
       );
     }
   },
@@ -168,7 +190,7 @@ const authSlice = createSlice({
     },
     setUserVerified(state) {
       if (state.user) {
-        state.user.isVerified = "true";
+        state.user.isVerified = true;
       }
     },
   },

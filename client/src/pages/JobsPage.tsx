@@ -1,9 +1,24 @@
 import { FormEvent, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { addJob } from "../store/slices/portalSlice";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import type { Job } from "../types";
 
-const emptyForm: Omit<Job, "id" | "createdAt"> = {
+type JobFormData = {
+  title: string;
+  location: string;
+  employmentType: Job["employmentType"];
+  salaryRange: string;
+  status: Job["status"];
+  deadline: string;
+  tags: string[];
+  experienceLevel: string;
+  requiredSkills: string[];
+  preferredEducation: string;
+  requiredExperience: number;
+};
+
+const emptyForm: JobFormData = {
   title: "",
   location: "",
   employmentType: "Full-time",
@@ -12,14 +27,22 @@ const emptyForm: Omit<Job, "id" | "createdAt"> = {
   deadline: "",
   tags: [],
   experienceLevel: "",
+  requiredSkills: [],
+  preferredEducation: "",
+  requiredExperience: 0,
 };
 
 export function JobsPage() {
-  const dispatch = useAppDispatch();
-  const jobs = useAppSelector((state: any) => state.portal.jobs) as Job[];
-  const analytics = useAppSelector((state: any) => state.portal.analytics);
+  const dispatch     = useAppDispatch();
+  const user         = useAppSelector((state: any) => state.auth.user);
+  const jobs         = useAppSelector((state: any) => state.portal.jobs) as Job[];
+  const analytics    = useAppSelector((state: any) => state.portal.analytics);
+  const addJobError  = useAppSelector((state: any) => state.portal.addJobError) as string | null;
+  const portalError  = useAppSelector((state: any) => state.portal.error) as string | null;
+  const isVerified   = !!user?.isVerified;
   const [form, setForm] = useState(emptyForm);
   const [tagsInput, setTagsInput] = useState("");
+  const [skillsInput, setSkillsInput] = useState("");
 
   const openCount = useMemo(
     () => jobs.filter((job) => job.status === "Open").length,
@@ -33,16 +56,28 @@ export function JobsPage() {
       .map((tag) => tag.trim())
       .filter((tag) => tag !== "");
 
-    void dispatch(addJob({ ...form, tags: finalTags }));
-    setForm(emptyForm);
-    setTagsInput("");
+    const finalSkills = skillsInput
+      .split(",")
+      .map((skill) => skill.trim())
+      .filter((skill) => skill !== "");
+
+    dispatch(addJob({ ...form, tags: finalTags, requiredSkills: finalSkills }))
+      .unwrap()
+      .then(() => {
+        setForm(emptyForm);
+        setTagsInput("");
+        setSkillsInput("");
+      })
+      .catch(() => {
+        // error is shown via addJobError from Redux state
+      });
   };
 
   return (
     <div className="page-stack">
       <section className="dashboard-hero">
         <div className="hero-content">
-          <h2>Craft the next chapter of Nysa.</h2>
+          <h2>Craft the next chapter of Career.</h2>
           <p>
             Your roles are more than just listings—they are invitations to join
             a community. Build beautiful, meaningful job posts that resonate
@@ -93,6 +128,32 @@ export function JobsPage() {
           <strong>{analytics?.conversionRate ?? 0}%</strong>
         </article>
       </div>
+
+      {/* Verification gate banner — shown when company is not yet verified */}
+      {!isVerified && (
+        <div style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.35)",
+          borderRadius: "var(--radius-md)",
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 14,
+        }}>
+          <span style={{ fontSize: "1.2rem", lineHeight: 1, flexShrink: 0 }}>⚠</span>
+          <div>
+            <p style={{ fontWeight: 600, color: "var(--danger)", marginBottom: 4 }}>
+              Company verification required
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "var(--muted-foreground)", marginBottom: 10 }}>
+              Please upload valid business registration documents before publishing job roles.
+            </p>
+            <Link to="/portal/company" className="secondary-btn" style={{ fontSize: "0.82rem", padding: "6px 14px", display: "inline-flex" }}>
+              Upload Verification Documents →
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="two-column">
         <section className="panel">
@@ -170,9 +231,41 @@ export function JobsPage() {
               <label htmlFor="job-tags">Tags (comma separated)</label>
               <input
                 id="job-tags"
-                placeholder="e.g. React, UI, Remote"
+                placeholder="e.g. Remote, Urgent, Startup"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
+              />
+            </div>
+
+            <div className="field-wrap">
+              <label htmlFor="job-required-skills">Required Skills (comma separated)</label>
+              <input
+                id="job-required-skills"
+                placeholder="e.g. React, Node.js, TypeScript"
+                value={skillsInput}
+                onChange={(e) => setSkillsInput(e.target.value)}
+              />
+            </div>
+
+            <div className="field-wrap">
+              <label htmlFor="job-preferred-education">Preferred Education</label>
+              <input
+                id="job-preferred-education"
+                placeholder="e.g. Bachelor's in Computer Science"
+                value={form.preferredEducation}
+                onChange={(e) => setForm({ ...form, preferredEducation: e.target.value })}
+              />
+            </div>
+
+            <div className="field-wrap">
+              <label htmlFor="job-required-experience">Required Experience (Years)</label>
+              <input
+                id="job-required-experience"
+                type="number"
+                min="0"
+                placeholder="e.g. 3"
+                value={form.requiredExperience === 0 ? "" : form.requiredExperience}
+                onChange={(e) => setForm({ ...form, requiredExperience: Number(e.target.value) })}
               />
             </div>
 
@@ -204,9 +297,20 @@ export function JobsPage() {
               </select>
             </div>
 
-            <button type="submit" className="primary-btn">
+            <button
+              type="submit"
+              className="primary-btn"
+              disabled={!isVerified}
+              title={!isVerified ? "Company verification required before publishing" : undefined}
+            >
               Publish Role
             </button>
+
+            {addJobError && (
+              <p style={{ color: "var(--danger)", marginTop: "10px", fontSize: "0.9rem" }}>
+                Failed to publish: {addJobError}
+              </p>
+            )}
           </form>
         </section>
 
@@ -217,6 +321,12 @@ export function JobsPage() {
               View Analytics
             </Link>
           </div>
+
+          {portalError && (
+            <p style={{ color: "var(--danger)", marginBottom: "12px", fontSize: "0.9rem" }}>
+              Failed to load jobs: {portalError}
+            </p>
+          )}
 
           <div className="table-wrapper">
             <table>
@@ -270,5 +380,3 @@ export function JobsPage() {
     </div>
   );
 }
-
-import { Link } from "react-router-dom";
